@@ -1,45 +1,101 @@
 import { LitElement, html, css } from "https://unpkg.com/lit@2.8.0/index.js?module";
 
 const CATALOG_URL = "https://heavycomforter.com/audio/catalog.json";
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
+
+function hashStr(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+function artFor(track) {
+  if (track.artwork) return track.artwork;
+  const h = hashStr(track.album || track.title);
+  const h1 = h % 360;
+  const h2 = (h1 + 40) % 360;
+  return `linear-gradient(135deg, hsl(${h1} 45% 22%), hsl(${h2} 50% 12%))`;
+}
 
 class BigOnCard extends LitElement {
   static get properties() {
     return {
       hass: { type: Object },
       config: { type: Object },
-      _catalog: { type: Object, state: true },
-      _current: { type: Object, state: true },
-      _playing: { type: Boolean, state: true },
-      _audio: { type: Object, state: true },
+      _catalog: { state: true },
+      _queue: { state: true },
+      _current: { state: true },
+      _playing: { state: true },
+      _showList: { state: true },
+      _progress: { state: true },
+      _duration: { state: true },
+      _shuffle: { state: true },
     };
   }
 
   static get styles() {
     return css`
-      :host { display: block; }
-      .bo { font-family: var(--paper-font-body1_-_font-family, Roboto, sans-serif); color: var(--primary-text-color); }
-      .bo-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-      .bo-art { width: 64px; height: 64px; border-radius: 6px; background: var(--secondary-background-color); display: grid; place-items: center; overflow: hidden; }
-      .bo-title { font-weight: 600; }
-      .bo-sub { color: var(--secondary-text-color); font-size: 0.9em; }
-      .bo-list { max-height: 320px; overflow-y: auto; border: 1px solid var(--divider-color); border-radius: 8px; }
-      .bo-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer; border-bottom: 1px solid var(--divider-color); }
-      .bo-row:last-child { border-bottom: none; }
-      .bo-row:hover { background: var(--secondary-background-color); }
-      .bo-row.playing { background: var(--primary-color); color: var(--text-primary-color, #fff); }
-      .bo-row .idx { width: 24px; text-align: right; color: var(--secondary-text-color); flex-shrink: 0; }
-      .bo-controls { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
-      button.bo-btn { border: none; background: var(--primary-color); color: var(--text-primary-color, #fff); padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+      :host { display: block; --bo-bg: #12141c; --bo-ink: #f2eee6; --bo-mut: #8b8f9d; --bo-amber: #e8a848; }
+      .bo { position: relative; border-radius: 14px; overflow: hidden; background: var(--bo-bg); color: var(--bo-ink); font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
+      .art { position: relative; height: 200px; display: flex; align-items: flex-end; }
+      .art-bg { position: absolute; inset: 0; background-size: cover; background-position: center; }
+      .art-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(18,20,28,0.15) 0%, rgba(18,20,28,0.55) 55%, rgba(18,20,28,0.98) 100%); }
+      .art-text { position: relative; padding: 16px 18px; z-index: 1; }
+      .badge { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--bo-amber); font-weight: 700; margin-bottom: 6px; }
+      .title { font-size: 22px; font-weight: 700; line-height: 1.15; }
+      .sub { font-size: 13px; color: var(--bo-mut); margin-top: 3px; }
+      .progress { padding: 10px 18px 0; }
+      .bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,0.14); cursor: pointer; position: relative; }
+      .bar-fill { height: 100%; width: 0%; border-radius: 2px; background: var(--bo-amber); }
+      .times { display: flex; justify-content: space-between; font-size: 11px; color: var(--bo-mut); margin-top: 6px; font-variant-numeric: tabular-nums; }
+      .controls { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px 16px; }
+      .ctl-btn { background: none; border: none; color: var(--bo-ink); cursor: pointer; padding: 8px; border-radius: 50%; display: grid; place-items: center; }
+      .ctl-btn:hover { color: var(--bo-amber); }
+      .ctl-btn.primary { background: var(--bo-amber); color: #12141c; width: 48px; height: 48px; }
+      .ctl-btn.primary:hover { filter: brightness(1.08); }
+      .ctl-btn.off { color: var(--bo-mut); }
+      .list { border-top: 1px solid rgba(255,255,255,0.08); max-height: 260px; overflow-y: auto; }
+      .row { display: flex; align-items: center; gap: 12px; padding: 11px 18px; cursor: pointer; }
+      .row:hover { background: rgba(255,255,255,0.04); }
+      .row.now { background: rgba(232,168,72,0.12); }
+      .row .rt { flex: 1; min-width: 0; }
+      .row .rt .t { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .row .rt .a { font-size: 12px; color: var(--bo-mut); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .row .eq { color: var(--bo-amber); font-size: 13px; flex-shrink: 0; }
+      .row .idx { color: var(--bo-mut); font-size: 12px; width: 20px; text-align: right; flex-shrink: 0; }
+      .head { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px 8px; }
+      .head .brand { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--bo-amber); font-weight: 700; }
+      .head .count { font-size: 12px; color: var(--bo-mut); }
+      svg { width: 20px; height: 20px; fill: currentColor; }
     `;
   }
 
-  setConfig(config) {
-    this.config = { entity: "", ...config };
+  constructor() {
+    super();
+    this._catalog = null;
+    this._queue = [];
+    this._current = null;
+    this._playing = false;
+    this._showList = true;
+    this._progress = 0;
+    this._duration = 0;
+    this._shuffle = false;
+    this._audio = new Audio();
+    this._audio.addEventListener("timeupdate", () => {
+      this._progress = this._audio.currentTime || 0;
+      this._duration = this._audio.duration || 0;
+    });
+    this._audio.addEventListener("ended", () => this._next());
+    this._audio.addEventListener("playing", () => { this._playing = true; });
+    this._audio.addEventListener("pause", () => { this._playing = false; });
   }
 
-  set hass(hass) {
-    this._hass = hass;
+  setConfig(config) {
+    this.config = { entity: "", title: "Heavy Comforter", ...config };
+  }
+
+  set hass(h) {
+    this._hass = h;
     if (!this._catalog) this._loadCatalog();
   }
 
@@ -50,18 +106,19 @@ class BigOnCard extends LitElement {
   async _loadCatalog() {
     try {
       const r = await fetch(CATALOG_URL);
-      this._catalog = await r.json();
+      const m = await r.json();
+      this._catalog = m;
+      this._queue = (m.tracks || []).slice();
+      this.requestUpdate();
     } catch (e) {
-      this._catalog = { tracks: [] };
+      this._catalog = { name: "Heavy Comforter", tracks: [] };
     }
   }
 
   _play(track) {
     this._current = track;
-
-    // 1. If a target media player is configured, hand the URL to it.
     const entity = this.config && this.config.entity;
-    if (entity) {
+    if (entity && this._hass) {
       this._hass.callService("media_player", "play_media", {
         entity_id: entity,
         media_content_id: track.url,
@@ -70,58 +127,128 @@ class BigOnCard extends LitElement {
       this._playing = true;
       return;
     }
-
-    // 2. Fallback: play in the dashboard itself.
-    if (!this._audio) this._audio = new Audio();
     this._audio.src = track.url;
     this._audio.play();
-    this._playing = true;
   }
 
-  _stop() {
-    if (this._audio) this._audio.pause();
-    this._playing = false;
+  _toggle() {
+    if (!this._current) { if (this._queue.length) this._play(this._queue[0]); return; }
+    const entity = this.config && this.config.entity;
+    if (entity && this._hass) {
+      this._hass.callService("media_player", this._playing ? "media_pause" : "media_play", { entity_id: entity });
+      this._playing = !this._playing;
+      return;
+    }
+    if (this._playing) { this._audio.pause(); } else { this._audio.play(); }
+  }
+
+  _step(dir) {
+    if (!this._queue.length) return;
+    const idx = this._current ? this._queue.indexOf(this._current) : -1;
+    const n = this._queue.length;
+    const next = idx < 0 ? 0 : (idx + dir + n) % n;
+    this._play(this._queue[next]);
+  }
+
+  _seek(e) {
+    if (!this._audio || !this._duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = (e.clientX - rect.left) / rect.width;
+    this._audio.currentTime = ratio * this._duration;
+  }
+
+  _toggleShuffle() {
+    if (!this._catalog) return;
+    this._shuffle = !this._shuffle;
+    const tracks = this._catalog.tracks.slice();
+    if (this._shuffle) {
+      for (let i = tracks.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [tracks[i], tracks[j]] = [tracks[j], tracks[i]];
+      }
+    }
+    this._queue = tracks;
+  }
+
+  _fmt(s) {
+    if (!s || !isFinite(s)) return "0:00";
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60).toString().padStart(2, "0");
+    return `${m}:${sec}`;
   }
 
   render() {
-    const tracks = (this._catalog && this._catalog.tracks) || [];
-    return html`
-      <ha-card>
-        <div class="bo" style="padding:16px;">
-          <div class="bo-head">
-            <div class="bo-art">${this._current ? html`<span>♪</span>` : html`<span>HC</span>`}</div>
-            <div>
-              <div class="bo-title">${this._current ? this._current.title : "Big On"}</div>
-              <div class="bo-sub">${this._catalog ? this._catalog.name + " · " + tracks.length + " tracks" : "Loading catalog..."}</div>
-            </div>
-          </div>
+    const tracks = this._queue || [];
+    const cur = this._current;
+    const pct = this._duration ? (this._progress / this._duration) * 100 : 0;
 
-          <div class="bo-list">
+    return html`
+      <div class="bo">
+        <div class="art">
+          <div class="art-bg" style="background:${cur ? artFor(cur) : "linear-gradient(135deg, #1c1f2b, #12141c)"};"></div>
+          <div class="art-scrim"></div>
+          <div class="art-text">
+            <div class="badge">${this.config && this.config.title ? this.config.title : "Big On"}</div>
+            <div class="title">${cur ? cur.title : "Nothing playing"}</div>
+            <div class="sub">${cur ? (cur.artist || "") + (cur.album ? " · " + cur.album : "") : "Pick a track below"}</div>
+          </div>
+        </div>
+
+        <div class="progress">
+          <div class="bar" @click=${this._seek}>
+            <div class="bar-fill" style="width:${pct}%"></div>
+          </div>
+          <div class="times"><span>${this._fmt(this._progress)}</span><span>${this._fmt(this._duration)}</span></div>
+        </div>
+
+        <div class="controls">
+          <button class="ctl-btn ${this._shuffle ? "" : "off"}" @click=${this._toggleShuffle} title="Shuffle">
+            <svg viewBox="0 0 24 24"><path d="M10.6 9.6 8.4 7.4A5.99 5.99 0 0 0 4 6v2a4 4 0 0 1 2.6.9l2.2 2.2L10.6 9.6Zm9.4-.6V5l-2.4 2.4A6 6 0 0 0 13 4v2a4 4 0 0 1 3 1.2L18 9.2 20 9Zm0 6-2-2-2 2h4ZM13 18v-2a4 4 0 0 1-3-1.2L8.4 16a6 6 0 0 0 4.6 2Zm-9.4-2.4L5.8 17 8 17.6l2.2-2.2L8 13.2l-2.4 2.4Z"/></svg>
+          </button>
+          <button class="ctl-btn" @click=${() => this._step(-1)} title="Previous">
+            <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+          </button>
+          <button class="ctl-btn primary" @click=${this._toggle} title="Play / Pause">
+            ${this._playing
+              ? html`<svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>`
+              : html`<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>`}
+          </button>
+          <button class="ctl-btn" @click=${() => this._step(1)} title="Next">
+            <svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
+          </button>
+          <button class="ctl-btn ${this._showList ? "" : "off"}" @click=${() => (this._showList = !this._showList)} title="Track list">
+            <svg viewBox="0 0 24 24"><path d="M3 5h18v2H3zm0 6h18v2H3zm0 6h18v2H3z"/></svg>
+          </button>
+        </div>
+
+        ${this._showList ? html`
+          <div class="head">
+            <span class="brand">${this._catalog ? this._catalog.name : "Heavy Comforter"}</span>
+            <span class="count">${tracks.length} tracks</span>
+          </div>
+          <div class="list">
             ${tracks.map((t, i) => html`
-              <div class="bo-row ${this._current === t ? "playing" : ""}" @click=${() => this._play(t)}>
-                <span class="idx">${i + 1}</span>
-                <span>${t.title}</span>
+              <div class="row ${cur === t ? "now" : ""}" @click=${() => this._play(t)}>
+                <span class="idx">${cur === t ? "" : i + 1}</span>
+                ${cur === t ? html`<span class="eq">♫</span>` : ""}
+                <div class="rt">
+                  <div class="t">${t.title}</div>
+                  <div class="a">${t.album || ""}</div>
+                </div>
               </div>
             `)}
           </div>
-
-          <div class="bo-controls">
-            <button class="bo-btn" @click=${() => (this._playing ? this._stop() : this._current && this._play(this._current))}>
-              ${this._playing ? "Stop" : "Play"}
-            </button>
-            <span class="bo-sub">${this.config && this.config.entity ? "Playing on " + this.config.entity : "No player selected"}</span>
-          </div>
-        </div>
-      </ha-card>
+        ` : ""}
+      </div>
     `;
   }
 
   getCardSize() {
-    return 6;
+    return this._showList ? 9 : 6;
   }
 
   static getStubConfig() {
-    return { entity: "" };
+    return { entity: "", title: "Heavy Comforter" };
   }
 }
 

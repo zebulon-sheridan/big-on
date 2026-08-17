@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Big On — Heavy Comforter</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: #0b0c12; display: grid; place-items: center; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { width: 420px; }
+  .hero { text-align: center; margin-bottom: 24px; }
+  .hero .tag { color: #e8a848; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; font-weight: 700; }
+  .hero h1 { color: #f2eee6; font-size: 28px; margin: 6px 0 4px; letter-spacing: 0.5px; }
+  .hero p { color: #8b8f9d; margin: 0; font-size: 14px; }
+</style>
+<script type="module">
+  import './dist/big-on.js';
+  const card = document.createElement('big-on-card');
+  card.setConfig({ title: 'Heavy Comforter', entity: '' });
+  card.hass = {};
+  document.querySelector('#mount').appendChild(card);
+  setTimeout(() => {
+    if (card._queue && card._queue.length) { card._current = card._queue[0]; }
+  }, 2000);
+</script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <div class="tag">Big On</div>
+      <h1>Heavy Comforter</h1>
+      <p>A music player for Home Assistant</p>
+    </div>
+    <div id="mount"></div>
+  </div>
+</body>
+</html>
