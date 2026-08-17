@@ -1,8 +1,19 @@
 import { LitElement, html, css } from "https://unpkg.com/lit@2.8.0/index.js?module";
 
 const CATALOG_URL = "https://heavycomforter.com/audio/catalog.json";
-const VERSION = "0.4.0";
+const VERSION = "0.5.0";
 const ADDON_SLUG = "music_assistant";
+
+const PROVIDERS = [
+  { name: "Spotify", sub: "Streaming" },
+  { name: "YouTube Music", sub: "Streaming" },
+  { name: "Tidal", sub: "Streaming" },
+  { name: "Apple Music", sub: "Streaming" },
+  { name: "Qobuz", sub: "Streaming" },
+  { name: "Deezer", sub: "Streaming" },
+  { name: "SoundCloud", sub: "Streaming" },
+  { name: "Local files", sub: "SMB / NFS shares" },
+];
 
 function hashStr(s) {
   let h = 0;
@@ -115,6 +126,10 @@ class BigOnCard extends LitElement {
       .step .st .t { font-size: 14px; font-weight: 600; }
       .step .st .d { font-size: 12px; color: var(--bo-mut); margin-top: 3px; line-height: 1.5; }
       .step .st a { color: var(--bo-amber); }
+      .provgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+      .prov { display: flex; flex-direction: column; gap: 3px; padding: 10px; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; background: rgba(255,255,255,0.03); }
+      .pv-n { font-size: 13px; font-weight: 600; }
+      .pv-d { font-size: 11px; color: var(--bo-mut); }
       .banner { margin: 8px 14px; padding: 10px 14px; border: 1px solid rgba(232,168,72,0.35); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: rgba(232,168,72,0.05); }
       .banner .bt { font-size: 13px; font-weight: 600; }
       .banner .bs { font-size: 11.5px; color: var(--bo-mut); margin-top: 2px; }
@@ -154,7 +169,7 @@ class BigOnCard extends LitElement {
   }
 
   setConfig(config) {
-    this.config = { entity: "", title: "Heavy Comforter", ...config };
+    this.config = { entity: "", title: "Heavy Comforter", ma_url: "", ...config };
   }
 
   set hass(h) {
@@ -286,6 +301,10 @@ class BigOnCard extends LitElement {
     this._detect();
   }
 
+  _maUrl() {
+    return (this.config && this.config.ma_url) ? this.config.ma_url : "/music-assistant";
+  }
+
   _fmt(s) {
     if (!s || !isFinite(s)) return "0:00";
     const m = Math.floor(s / 60);
@@ -371,8 +390,20 @@ class BigOnCard extends LitElement {
         <div class="step">
           <div class="num">3</div>
           <div class="st">
-            <div class="t">Add your music</div>
-            <div class="d">In the Music Assistant panel, add your sources: local files (SMB/NFS) and streaming (Spotify, YouTube Music, and more).</div>
+            <div class="t">Connect your music services</div>
+            <div class="d">Open Music Assistant and log in to each service you use. Big On never sees your passwords. The login happens inside Music Assistant.</div>
+            <div style="margin-top:10px;">
+              <a class="btn" href=${this._maUrl()} target="_blank" rel="noopener" style="text-decoration:none;">Open Music Assistant</a>
+            </div>
+            <div class="provgrid">
+              ${PROVIDERS.map(p => html`
+                <div class="prov">
+                  <span class="pv-n">${p.name}</span>
+                  <span class="pv-d">${p.sub}</span>
+                </div>
+              `)}
+            </div>
+            ${!this.config.ma_url ? html`<div class="d" style="margin-top:8px;">If this doesn't open Music Assistant, set its web address in the card options (ma_url).</div>` : ""}
           </div>
         </div>
 
@@ -493,7 +524,7 @@ class BigOnCard extends LitElement {
   }
 
   static getStubConfig() {
-    return { entity: "", title: "Heavy Comforter" };
+    return { entity: "", title: "Heavy Comforter", ma_url: "" };
   }
 }
 
