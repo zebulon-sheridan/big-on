@@ -355,7 +355,7 @@ class BigOnCard extends LitElement {
                   <a class="btn ghost" style="margin-left:8px;text-decoration:none;" href="/hassio/store">Add-on store</a>
                 </div>`
               : html`
-                <div class="d">This looks like a Docker or Container install, so the card cannot install it for you. Run the Music Assistant container, or install it on a Supervised system. <a href="https://www.music-assistant.io/installation/" target="_blank">Installation guide</a>.</div>`}
+                <div class="d">The add-on store isn't available here, so the card can't install Music Assistant for you. This needs Home Assistant OS or Supervised. Install Music Assistant yourself, then come back and connect it. <a href="https://www.music-assistant.io/installation/" target="_blank">Installation guide</a>.</div>`}
           </div>
         </div>
 
