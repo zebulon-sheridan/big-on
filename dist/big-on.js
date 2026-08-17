@@ -1,7 +1,8 @@
 import { LitElement, html, css } from "https://unpkg.com/lit@2.8.0/index.js?module";
 
 const CATALOG_URL = "https://heavycomforter.com/audio/catalog.json";
-const VERSION = "0.3.0";
+const VERSION = "0.4.0";
+const ADDON_SLUG = "music_assistant";
 
 function hashStr(s) {
   let h = 0;
@@ -42,6 +43,12 @@ class BigOnCard extends LitElement {
       _query: { state: true },
       _results: { state: true },
       _busy: { state: true },
+      _setup: { state: true },
+      _consented: { state: true },
+      _consentOk: { state: true },
+      _supervisor: { state: true },
+      _installing: { state: true },
+      _installErr: { state: true },
     };
   }
 
@@ -89,6 +96,28 @@ class BigOnCard extends LitElement {
       .head .count { font-size: 12px; color: var(--bo-mut); }
       .thumb { width: 40px; height: 40px; border-radius: 6px; flex-shrink: 0; background-size: cover; background-position: center; }
       svg { width: 20px; height: 20px; fill: currentColor; }
+
+      /* setup */
+      .setup { padding: 18px; }
+      .setup h2 { margin: 0 0 10px; font-size: 18px; }
+      .setup p { margin: 0 0 12px; font-size: 13px; color: var(--bo-mut); line-height: 1.5; }
+      .consent { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border: 1px solid rgba(232,168,72,0.4); border-radius: 8px; margin: 12px 0; background: rgba(232,168,72,0.06); }
+      .consent input { margin-top: 2px; }
+      .consent label { font-size: 12.5px; color: var(--bo-ink); line-height: 1.45; }
+      .btn { display: inline-block; background: var(--bo-amber); color: #12141c; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; }
+      .btn:disabled { background: rgba(255,255,255,0.08); color: var(--bo-mut); cursor: not-allowed; }
+      .btn.ghost { background: transparent; border: 1px solid rgba(255,255,255,0.2); color: var(--bo-ink); font-weight: 400; }
+      .step { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.08); }
+      .step:last-child { border-bottom: none; }
+      .step .num { width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,0.08); color: var(--bo-ink); display: grid; place-items: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+      .step.done .num { background: var(--bo-amber); color: #12141c; }
+      .step .st { flex: 1; min-width: 0; }
+      .step .st .t { font-size: 14px; font-weight: 600; }
+      .step .st .d { font-size: 12px; color: var(--bo-mut); margin-top: 3px; line-height: 1.5; }
+      .step .st a { color: var(--bo-amber); }
+      .banner { margin: 8px 14px; padding: 10px 14px; border: 1px solid rgba(232,168,72,0.35); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: rgba(232,168,72,0.05); }
+      .banner .bt { font-size: 13px; font-weight: 600; }
+      .banner .bs { font-size: 11.5px; color: var(--bo-mut); margin-top: 2px; }
     `;
   }
 
@@ -109,6 +138,11 @@ class BigOnCard extends LitElement {
     this._query = "";
     this._results = null;
     this._busy = false;
+    this._setup = false;
+    this._consented = false;
+    this._supervisor = false;
+    this._installing = false;
+    this._installErr = false;
     this._audio = new Audio();
     this._audio.addEventListener("timeupdate", () => {
       this._progress = this._audio.currentTime || 0;
@@ -134,10 +168,13 @@ class BigOnCard extends LitElement {
   _detect() {
     const svc = this._hass && this._hass.services;
     this._ma = !!(svc && svc.music_assistant);
+    this._supervisor = !!(svc && svc.hassio);
     const states = this._hass && this._hass.states;
     this._players = states ? Object.keys(states).filter(e => e.startsWith("media_player.")).sort() : [];
     if (!this._player && this._players.length) this._player = this._players[0];
     if (this.config && this.config.entity) this._player = this.config.entity;
+    // Auto-exit setup once MA is connected.
+    if (this._ma && this._setup) this._setup = false;
   }
 
   async _loadCatalog() {
@@ -153,8 +190,6 @@ class BigOnCard extends LitElement {
 
   _play(item) {
     this._current = item;
-
-    // Music Assistant path: item has a provider URI and MA is available + a player is chosen
     if (this._ma && this._player && item.uri) {
       this._hass.callService("music_assistant", "play_media", {
         media_id: item.uri,
@@ -165,8 +200,6 @@ class BigOnCard extends LitElement {
       this._playing = true;
       return;
     }
-
-    // Plain HA media_player path
     if (this._player && this._hass && (item.url || item.uri)) {
       this._hass.callService("media_player", "play_media", {
         entity_id: this._player,
@@ -176,8 +209,6 @@ class BigOnCard extends LitElement {
       this._playing = true;
       return;
     }
-
-    // Browser fallback
     if (item.url) {
       this._audio.src = item.url;
       this._audio.play();
@@ -240,8 +271,19 @@ class BigOnCard extends LitElement {
     this._busy = false;
   }
 
-  _onQuery(e) {
-    this._query = e.target.value;
+  _onQuery(e) { this._query = e.target.value; }
+
+  async _installAddon() {
+    this._installing = true;
+    this._installErr = false;
+    try {
+      await this._hass.callService("hassio", "addon_install", { slug: ADDON_SLUG });
+      await this._hass.callService("hassio", "addon_start", { slug: ADDON_SLUG });
+    } catch (e) {
+      this._installErr = true;
+    }
+    this._installing = false;
+    this._detect();
   }
 
   _fmt(s) {
@@ -256,9 +298,7 @@ class BigOnCard extends LitElement {
     if (!this._results) return html`<div class="hint">Search your library and streaming providers.</div>`;
     if (this._results.error) return html`<div class="hint">Search failed. Is Music Assistant connected?</div>`;
     const groups = [];
-    const add = (label, items, type) => {
-      if (items && items.length) groups.push({ label, items, type });
-    };
+    const add = (label, items, type) => { if (items && items.length) groups.push({ label, items, type }); };
     add("Tracks", this._results.tracks, "track");
     add("Albums", this._results.albums, "album");
     add("Artists", this._results.artists, "artist");
@@ -278,7 +318,83 @@ class BigOnCard extends LitElement {
     `);
   }
 
+  _renderSetup() {
+    if (!this._consented) {
+      return html`
+        <div class="bo"><div class="setup">
+          <div class="badge">Big On</div>
+          <h2>Set up Music Assistant</h2>
+          <p>Big On plays your music through Music Assistant. This adds two things to your system: the Music Assistant server, and a link between Home Assistant and that server.</p>
+          <p>Music Assistant is a separate, open-source service. After it is running, you add your own music sources and sign in with your own accounts. Nothing is sent to Big On or to Heavy Comforter.</p>
+          <div class="consent">
+            <input type="checkbox" id="bo-consent" @change=${(e) => (this._consentOk = e.target.checked)}>
+            <label for="bo-consent">I understand this installs the Music Assistant server and a Home Assistant integration, and that I will add my own music sources and log in with my own accounts.</label>
+          </div>
+          <button class="btn" ?disabled=${!this._consentOk} @click=${() => (this._consented = true)}>Continue</button>
+          <button class="btn ghost" style="margin-left:8px;" @click=${() => (this._setup = false)}>Cancel</button>
+        </div></div>
+      `;
+    }
+
+    const installed = this._ma;
+    return html`
+      <div class="bo"><div class="setup">
+        <div class="badge">Big On</div>
+        <h2>Set up Music Assistant</h2>
+
+        <div class="step ${this._supervisor && !this._installErr ? "done" : ""}">
+          <div class="num">1</div>
+          <div class="st">
+            <div class="t">Install the Music Assistant server</div>
+            ${this._supervisor
+              ? html`
+                <div class="d">You are on Home Assistant OS or Supervised, so this can run here.
+                  ${this._installErr ? html`<br>Could not install automatically. Open the add-on store and install "Music Assistant" there.` : ""}</div>
+                <div style="margin-top:8px;">
+                  <button class="btn" ?disabled=${this._installing} @click=${this._installAddon}>${this._installing ? "Installing..." : "Install add-on"}</button>
+                  <a class="btn ghost" style="margin-left:8px;text-decoration:none;" href="/hassio/store">Add-on store</a>
+                </div>`
+              : html`
+                <div class="d">This looks like a Docker or Container install, so the card cannot install it for you. Run the Music Assistant container, or install it on a Supervised system. <a href="https://www.music-assistant.io/installation/" target="_blank">Installation guide</a>.</div>`}
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="num">2</div>
+          <div class="st">
+            <div class="t">Connect Home Assistant to Music Assistant</div>
+            <div class="d">Add the Music Assistant integration. It is usually auto-discovered once the server is running.</div>
+            <div style="margin-top:8px;"><a class="btn ghost" style="text-decoration:none;" href="/config/integrations">Open integrations</a></div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="num">3</div>
+          <div class="st">
+            <div class="t">Add your music</div>
+            <div class="d">In the Music Assistant panel, add your sources: local files (SMB/NFS) and streaming (Spotify, YouTube Music, and more).</div>
+          </div>
+        </div>
+
+        <div class="step ${installed ? "done" : ""}">
+          <div class="num">4</div>
+          <div class="st">
+            <div class="t">${installed ? "Connected" : "Waiting for Music Assistant"}</div>
+            <div class="d">${installed ? "Music Assistant is connected. Search and players are now available." : "Once it is connected, this card will notice and turn on Search automatically."}</div>
+            ${!installed ? html`<div style="margin-top:8px;"><button class="btn ghost" @click=${this._detect}>Re-check</button></div>` : ""}
+          </div>
+        </div>
+
+        <div style="margin-top:14px;">
+          <button class="btn" @click=${() => (this._setup = false)}>${installed ? "Done" : "Close"}</button>
+        </div>
+      </div></div>
+    `;
+  }
+
   render() {
+    if (this._setup && !this._ma) return this._renderSetup();
+
     const tracks = this._queue || [];
     const cur = this._current;
     const pct = this._duration ? (this._progress / this._duration) * 100 : 0;
@@ -296,6 +412,16 @@ class BigOnCard extends LitElement {
             </select>
           ` : ""}
         </div>
+
+        ${!this._ma ? html`
+          <div class="banner">
+            <div>
+              <div class="bt">Play your own music</div>
+              <div class="bs">Connect Music Assistant to search your library and streams.</div>
+            </div>
+            <button class="btn" @click=${() => (this._setup = true)}>Set up</button>
+          </div>
+        ` : ""}
 
         ${this._mode === "search" ? html`
           <div class="searchwrap">
