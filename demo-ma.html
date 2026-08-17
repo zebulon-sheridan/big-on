@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Big On — search view</title>
+<style>
+  body { margin: 0; min-height: 100vh; background: #0b0c12; display: grid; place-items: center; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { width: 420px; }
+</style>
+<script type="module">
+  import './dist/big-on.js';
+  const fakeHass = {
+    services: { music_assistant: {} },
+    states: {
+      'media_player.living_room': { attributes: {} },
+      'media_player.kitchen_speaker': { attributes: {} },
+    },
+    async callService(domain, service, data) {
+      if (service === 'search') {
+        return {
+          tracks: [
+            { name: 'Castro Coming Down', uri: 'library://track/1', media_type: 'track', artists: [{ name: 'Heavy Comforter' }] },
+            { name: 'Motherwell Feels', uri: 'library://track/2', media_type: 'track', artists: [{ name: 'Heavy Comforter' }] },
+          ],
+          albums: [{ name: '3', uri: 'library://album/1', media_type: 'album', artists: [{ name: 'Heavy Comforter' }] }],
+          artists: [{ name: 'Heavy Comforter', uri: 'library://artist/1', media_type: 'artist' }],
+          playlists: [{ name: 'Lo-Fi Nights', uri: 'library://playlist/1', media_type: 'playlist' }],
+        };
+      }
+      return {};
+    },
+  };
+  const card = document.createElement('big-on-card');
+  card.setConfig({ title: 'Heavy Comforter' });
+  card.hass = fakeHass;
+  document.querySelector('#mount').appendChild(card);
+  setTimeout(async () => {
+    card._mode = 'search';
+    card._query = 'heavy';
+    card._results = await fakeHass.callService('music_assistant', 'search', { name: 'heavy' });
+  }, 1500);
+</script>
+</head>
+<body><div class="wrap"><div id="mount"></div></div></body>
+</html>
