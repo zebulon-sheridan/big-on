@@ -1,8 +1,10 @@
 import { LitElement, html, css } from "https://unpkg.com/lit@2.8.0/index.js?module";
 
 const CATALOG_URL = "https://heavycomforter.com/audio/catalog.json";
-const VERSION = "0.5.0";
-const ADDON_SLUG = "music_assistant";
+const VERSION = "0.6.0";
+const ADDON_SLUG = "d5369777_music_assistant";
+const MA_REPO_URL = "https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmusic-assistant%2Fhome-assistant-addon";
+const SQUEEZELITE_REPO_URL = "https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fpssc%2Fha-addon-squeezelite";
 
 const PROVIDERS = [
   { name: "Spotify", sub: "Streaming" },
@@ -58,6 +60,7 @@ class BigOnCard extends LitElement {
       _consented: { state: true },
       _consentOk: { state: true },
       _supervisor: { state: true },
+      _legacyMass: { state: true },
       _installing: { state: true },
       _installErr: { state: true },
     };
@@ -133,6 +136,9 @@ class BigOnCard extends LitElement {
       .banner { margin: 8px 14px; padding: 10px 14px; border: 1px solid rgba(232,168,72,0.35); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: rgba(232,168,72,0.05); }
       .banner .bt { font-size: 13px; font-weight: 600; }
       .banner .bs { font-size: 11.5px; color: var(--bo-mut); margin-top: 2px; }
+      .warn { margin: 0 0 14px; padding: 10px 14px; border: 1px solid rgba(224,90,90,0.4); border-radius: 8px; background: rgba(224,90,90,0.08); font-size: 12px; color: #e8c9c9; line-height: 1.5; }
+      .warn b { color: #f2d0d0; }
+      .code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-size: 11px; }
     `;
   }
 
@@ -156,6 +162,7 @@ class BigOnCard extends LitElement {
     this._setup = false;
     this._consented = false;
     this._supervisor = false;
+    this._legacyMass = false;
     this._installing = false;
     this._installErr = false;
     this._audio = new Audio();
@@ -184,12 +191,11 @@ class BigOnCard extends LitElement {
     const svc = this._hass && this._hass.services;
     this._ma = !!(svc && svc.music_assistant);
     this._supervisor = !!(svc && svc.hassio);
+    this._legacyMass = !!(svc && svc.mass);
     const states = this._hass && this._hass.states;
     this._players = states ? Object.keys(states).filter(e => e.startsWith("media_player.")).sort() : [];
     if (!this._player && this._players.length) this._player = this._players[0];
     if (this.config && this.config.entity) this._player = this.config.entity;
-    // Auto-exit setup once MA is connected.
-    if (this._ma && this._setup) this._setup = false;
   }
 
   async _loadCatalog() {
@@ -361,18 +367,23 @@ class BigOnCard extends LitElement {
         <div class="badge">Big On</div>
         <h2>Set up Music Assistant</h2>
 
+        ${this._legacyMass ? html`
+          <div class="warn"><b>Old Music Assistant integration found.</b> You have the deprecated "Music Assistant" (mass) custom integration installed. It conflicts with the current one. Remove it under Settings, then Devices and services, then restart Home Assistant.</div>
+        ` : ""}
+
         <div class="step ${this._supervisor && !this._installErr ? "done" : ""}">
           <div class="num">1</div>
           <div class="st">
             <div class="t">Install the Music Assistant server</div>
             ${this._supervisor
               ? html`
-                <div class="d">You are on Home Assistant OS or Supervised, so this can run here.
-                  ${this._installErr ? html`<br>Could not install automatically. Open the add-on store and install "Music Assistant" there.` : ""}</div>
+                <div class="d">You are on Home Assistant OS or Supervised, so this can run here. Add the repository, then install.</div>
                 <div style="margin-top:8px;">
-                  <button class="btn" ?disabled=${this._installing} @click=${this._installAddon}>${this._installing ? "Installing..." : "Install add-on"}</button>
-                  <a class="btn ghost" style="margin-left:8px;text-decoration:none;" href="/hassio/store">Add-on store</a>
-                </div>`
+                  <a class="btn ghost" style="text-decoration:none;" href=${MA_REPO_URL} target="_blank" rel="noopener">Add Music Assistant repository</a>
+                  <button class="btn" style="margin-left:8px;" ?disabled=${this._installing} @click=${this._installAddon}>${this._installing ? "Installing..." : "Install add-on"}</button>
+                </div>
+                ${this._installErr ? html`<div class="d" style="margin-top:6px;">Could not install automatically. Open the add-on store, find Music Assistant, and install it there.</div>` : ""}
+                <div style="margin-top:6px;"><a class="btn ghost" style="text-decoration:none;" href="/hassio/store">Open add-on store</a></div>`
               : html`
                 <div class="d">The add-on store isn't available here, so the card can't install Music Assistant for you. This needs Home Assistant OS or Supervised. Install Music Assistant yourself, then come back and connect it. <a href="https://www.music-assistant.io/installation/" target="_blank">Installation guide</a>.</div>`}
           </div>
@@ -381,6 +392,19 @@ class BigOnCard extends LitElement {
         <div class="step">
           <div class="num">2</div>
           <div class="st">
+            <div class="t">Show Music Assistant in the sidebar</div>
+            ${this._supervisor
+              ? html`
+                <div class="d">This is the step most people miss. On the Music Assistant add-on, enable "Show in sidebar" and "Start on boot". That puts the Music Assistant panel where you can reach it.</div>
+                <div style="margin-top:8px;"><a class="btn ghost" style="text-decoration:none;" href="/hassio/addon/${ADDON_SLUG}/info">Open add-on settings</a></div>`
+              : html`
+                <div class="d">You run Music Assistant outside Home Assistant, so there is no add-on sidebar. Open its web interface directly instead.</div>`}
+          </div>
+        </div>
+
+        <div class="step ${installed ? "done" : ""}">
+          <div class="num">3</div>
+          <div class="st">
             <div class="t">Connect Home Assistant to Music Assistant</div>
             <div class="d">Add the Music Assistant integration. It is usually auto-discovered once the server is running.</div>
             <div style="margin-top:8px;"><a class="btn ghost" style="text-decoration:none;" href="/config/integrations">Open integrations</a></div>
@@ -388,7 +412,7 @@ class BigOnCard extends LitElement {
         </div>
 
         <div class="step">
-          <div class="num">3</div>
+          <div class="num">4</div>
           <div class="st">
             <div class="t">Connect your music services</div>
             <div class="d">Open Music Assistant and log in to each service you use. Big On never sees your passwords. The login happens inside Music Assistant.</div>
@@ -407,8 +431,30 @@ class BigOnCard extends LitElement {
           </div>
         </div>
 
+        <div class="step ${this._players.length ? "done" : ""}">
+          <div class="num">5</div>
+          <div class="st">
+            <div class="t">Add a speaker or player</div>
+            <div class="d">Big On plays through Music Assistant players. If you have no player yet, a Raspberry Pi with a headphone jack or USB DAC works great.</div>
+            ${this._supervisor
+              ? html`
+                <div class="d" style="margin-top:6px;">On Home Assistant OS, add the Squeezelite add-on and point it at your sound card.</div>
+                <div style="margin-top:8px;"><a class="btn ghost" style="text-decoration:none;" href=${SQUEEZELITE_REPO_URL} target="_blank" rel="noopener">Add Squeezelite repository</a></div>
+                <div class="d" style="margin-top:6px;">In the add-on, set the sound card to your USB DAC. Try <span class="code">hw:CARD=Audio,DEV=0</span>, or <span class="code">plughw:1,0</span> if that is silent. If audio stutters, use the <span class="code">alsa</span> build and add <span class="code">-a 150ms</span>.</div>`
+              : html`
+                <div class="d" style="margin-top:6px;">On a separate Linux box, install Squeezelite and point it at your sound card.</div>`}
+            <div style="margin-top:8px;">
+              <a class="btn ghost" style="text-decoration:none;" href=${this._maUrl()} target="_blank" rel="noopener">Open Music Assistant players</a>
+              <button class="btn ghost" style="margin-left:8px;" @click=${this._detect}>Re-check</button>
+            </div>
+            ${this._players.length
+              ? html`<div class="d" style="margin-top:6px;">${this._players.length} player${this._players.length === 1 ? "" : "s"} found. Pick one from the dropdown up top.</div>`
+              : html`<div class="d" style="margin-top:6px;">No players found yet. After you start Squeezelite, hit Re-check.</div>`}
+          </div>
+        </div>
+
         <div class="step ${installed ? "done" : ""}">
-          <div class="num">4</div>
+          <div class="num">6</div>
           <div class="st">
             <div class="t">${installed ? "Connected" : "Waiting for Music Assistant"}</div>
             <div class="d">${installed ? "Music Assistant is connected. Search and players are now available." : "Once it is connected, this card will notice and turn on Search automatically."}</div>
@@ -424,7 +470,7 @@ class BigOnCard extends LitElement {
   }
 
   render() {
-    if (this._setup && !this._ma) return this._renderSetup();
+    if (this._setup) return this._renderSetup();
 
     const tracks = this._queue || [];
     const cur = this._current;
@@ -449,6 +495,16 @@ class BigOnCard extends LitElement {
             <div>
               <div class="bt">Play your own music</div>
               <div class="bs">Connect Music Assistant to search your library and streams.</div>
+            </div>
+            <button class="btn" @click=${() => (this._setup = true)}>Set up</button>
+          </div>
+        ` : ""}
+
+        ${this._ma && !this._players.length ? html`
+          <div class="banner">
+            <div>
+              <div class="bt">Add a speaker</div>
+              <div class="bs">Music Assistant is connected but has no players yet.</div>
             </div>
             <button class="btn" @click=${() => (this._setup = true)}>Set up</button>
           </div>
